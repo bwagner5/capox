@@ -14,7 +14,14 @@ spec:
     singular: oxidemachine
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.providerID
+      name: ProviderID
+      type: string
+    - jsonPath: .status.initialization.provisioned
+      name: Ready
+      type: boolean
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: OxideMachine is the Schema for the oxidemachines API
@@ -39,10 +46,29 @@ spec:
           spec:
             description: spec defines the desired state of OxideMachine
             properties:
-              foo:
-                description: foo is an example field of OxideMachine. Edit oxidemachine_types.go
-                  to remove/update
+              diskSize:
+                anyOf:
+                - type: integer
+                - type: string
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              imageID:
                 type: string
+              memory:
+                anyOf:
+                - type: integer
+                - type: string
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              nCPUs:
+                type: integer
+              providerID:
+                type: string
+            required:
+            - diskSize
+            - imageID
+            - memory
+            - nCPUs
             type: object
           status:
             description: status defines the observed state of OxideMachine
@@ -116,6 +142,11 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              initialization:
+                properties:
+                  provisioned:
+                    type: boolean
+                type: object
             type: object
         required:
         - spec

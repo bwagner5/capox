@@ -39,10 +39,51 @@ spec:
           spec:
             description: spec defines the desired state of OxideCluster
             properties:
-              foo:
-                description: foo is an example field of OxideCluster. Edit oxidecluster_types.go
-                  to remove/update
+              controlPlaneEndpoint:
+                description: APIEndpoint represents a reachable Kubernetes API endpoint.
+                minProperties: 1
+                properties:
+                  host:
+                    description: host is the hostname on which the API server is serving.
+                    maxLength: 512
+                    minLength: 1
+                    type: string
+                  port:
+                    description: port is the port on which the API server is serving.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                type: object
+              credentialsRef:
+                description: |-
+                  SecretReference represents a Secret Reference. It has enough information to retrieve secret
+                  in any namespace
+                properties:
+                  name:
+                    description: name is unique within a namespace to reference a
+                      secret resource.
+                    type: string
+                  namespace:
+                    description: namespace defines the space within which the secret
+                      name must be unique.
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              ipPool:
                 type: string
+              project:
+                type: string
+              subnet:
+                type: string
+              vpc:
+                type: string
+            required:
+            - credentialsRef
+            - ipPool
+            - project
+            - subnet
+            - vpc
             type: object
           status:
             description: status defines the observed state of OxideCluster
@@ -116,6 +157,14 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              initialization:
+                description: |-
+                  Initialization provides observations of the OxideCluster initialization process.
+                  NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate initial Cluster provisioning.
+                properties:
+                  provisioned:
+                    type: boolean
+                type: object
             type: object
         required:
         - spec

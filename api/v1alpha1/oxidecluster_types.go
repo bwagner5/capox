@@ -17,22 +17,19 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
-
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // OxideClusterSpec defines the desired state of OxideCluster
 type OxideClusterSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of OxideCluster. Edit oxidecluster_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+	CredentialsRef       corev1.SecretReference `json:"credentialsRef"`
+	Project              string                 `json:"project"`
+	VPC                  string                 `json:"vpc"`
+	Subnet               string                 `json:"subnet"`
+	IPPool               string                 `json:"ipPool"`
+	ControlPlaneEndpoint clusterv1.APIEndpoint  `json:"controlPlaneEndpoint,omitempty"`
 }
 
 // OxideClusterStatus defines the observed state of OxideCluster.
@@ -56,6 +53,15 @@ type OxideClusterStatus struct {
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Initialization provides observations of the OxideCluster initialization process.
+	// NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate initial Cluster provisioning.
+	// +optional
+	Initialization OxideClusterInitializationStatus `json:"initialization,omitempty"`
+}
+
+type OxideClusterInitializationStatus struct {
+	Provisioned *bool `json:"provisioned,omitempty"`
 }
 
 // +kubebuilder:object:root=true
