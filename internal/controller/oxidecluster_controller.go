@@ -34,7 +34,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	infrastructurev1alpha1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
+	infrav1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
 	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud"
 	"github.com/oxidecomputer/oxide.go/oxide"
 )
@@ -66,7 +66,7 @@ type OxideClusterReconciler struct {
 func (r *OxideClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, retErr error) {
 	log := logf.FromContext(ctx)
 
-	var oxideCluster infrastructurev1alpha1.OxideCluster
+	var oxideCluster infrav1.OxideCluster
 	if err := r.Get(ctx, req.NamespacedName, &oxideCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -121,11 +121,18 @@ func (r *OxideClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			},
 		})
 		if err != nil {
+			// Adopt the floating IP if it already exists.
 			var httpError *oxide.HTTPError
-			if errors.As(err, &httpError) && httpError.ErrorResponse.ErrorCode == "ObjectAlreadyExists" {
-				log.Info("floating ip already exists", "name", ipName)
-			} else {
+			if !(errors.As(err, &httpError) && httpError.ErrorResponse.ErrorCode == "ObjectAlreadyExists") {
 				return ctrl.Result{}, err
+			}
+			log.Info("floating ip already exists", "name", ipName)
+			ip, err = oxideClient.FloatingIpView(ctx, oxide.FloatingIpViewParams{
+				Project:    oxide.NameOrId(oxideCluster.Spec.Project),
+				FloatingIp: oxide.NameOrId(ipName),
+			})
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("fetching existing floating ip: %w", err)
 			}
 		}
 		oxideCluster.Spec.ControlPlaneEndpoint.Host = ip.Ip
@@ -142,32 +149,69 @@ func (r *OxideClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	oxideCluster.Status.Initialization.Provisioned = ptr.To(true)
 
 	// Ensure floating IP is attached to an instance. Use the 0th ready machine if unattached.
-	if ip.InstanceId == "" {
-		var machines infrastructurev1alpha1.OxideMachineList
-		if err := r.List(ctx, &machines, client.InNamespace(oxideCluster.Namespace), client.MatchingLabels{
-			clusterv1.ClusterNameLabel:         oxideCluster.Name,
-			clusterv1.MachineControlPlaneLabel: "",
-		}); err != nil {
-			return ctrl.Result{}, err
-		}
+	shouldAttach := true
+	var machines infrav1.OxideMachineList
+
+	// If the floating IP is attached, check whether it's attached to one of the machines in the current cluster.
+	if err := r.List(ctx, &machines, client.InNamespace(oxideCluster.Namespace), client.MatchingLabels{
+		clusterv1.ClusterNameLabel:         oxideCluster.Name,
+		clusterv1.MachineControlPlaneLabel: "",
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("listing oxide machines: %w", err)
+	}
+	if ip.InstanceId != "" {
 		for _, machine := range machines.Items {
+			if machine.Spec.ProviderID != "" {
+				instanceID, err := cloud.InstanceIDFromProviderID(machine.Spec.ProviderID)
+				if err != nil {
+					return ctrl.Result{}, fmt.Errorf("parsing provider id: %w", err)
+				}
+				if instanceID == ip.InstanceId {
+					shouldAttach = false
+					break
+				}
+			}
+		}
+	}
+
+	if shouldAttach {
+		log.Info("finding an instance for floating ip attachment", "ip", ip.Ip)
+
+		// If the floating IP is already attached, detach it. This is arguably out of scope for the reconciler, since it's not our responsibility to handle out-of-band changes to the floating IP. But if a deleted cluster failed to clean up its instances or IP, we detach here as a convenience to the user.
+		if ip.InstanceId != "" {
+			log.Info("floating ip already attached; detaching", "ip", ip.Ip, "instance", ip.InstanceId)
+			if _, err := oxideClient.FloatingIpDetach(ctx, oxide.FloatingIpDetachParams{
+				FloatingIp: oxide.NameOrId(ip.Id),
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("detaching floating ip: %w", err)
+			}
+		}
+
+		// Attach the floating IP to the 0th provisioned instance.
+		for _, machine := range machines.Items {
+			if machine.Spec.ProviderID == "" {
+				continue
+			}
+			if provisioned := machine.Status.Initialization.Provisioned; provisioned == nil || !*provisioned {
+				continue
+			}
 			instanceID, err := cloud.InstanceIDFromProviderID(machine.Spec.ProviderID)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("parsing provider id: %w", err)
 			}
-			if machine.Status.Initialization.Provisioned != nil && *machine.Status.Initialization.Provisioned {
-				if _, err := oxideClient.FloatingIpAttach(ctx, oxide.FloatingIpAttachParams{
-					FloatingIp: oxide.NameOrId(ip.Id),
-					Body: &oxide.FloatingIpAttach{
-						Kind:   oxide.FloatingIpParentKindInstance,
-						Parent: oxide.NameOrId(instanceID),
-					},
-				}); err != nil {
-					return ctrl.Result{}, err
-				}
-				break
+			log.Info("attaching floating ip", "ip", ip.Ip, "instance", instanceID)
+			if _, err := oxideClient.FloatingIpAttach(ctx, oxide.FloatingIpAttachParams{
+				FloatingIp: oxide.NameOrId(ip.Id),
+				Body: &oxide.FloatingIpAttach{
+					Kind:   oxide.FloatingIpParentKindInstance,
+					Parent: oxide.NameOrId(instanceID),
+				},
+			}); err != nil {
+				return ctrl.Result{}, err
 			}
+			break
 		}
+
 	}
 
 	return ctrl.Result{}, nil
@@ -176,8 +220,8 @@ func (r *OxideClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 // SetupWithManager sets up the controller with the Manager.
 func (r *OxideClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&infrastructurev1alpha1.OxideCluster{}).
-		Watches(&infrastructurev1alpha1.OxideMachine{}, handler.EnqueueRequestsFromMapFunc(
+		For(&infrav1.OxideCluster{}).
+		Watches(&infrav1.OxideMachine{}, handler.EnqueueRequestsFromMapFunc(
 			r.oxideMachineToOxideCluster,
 		)).
 		Named("oxidecluster").

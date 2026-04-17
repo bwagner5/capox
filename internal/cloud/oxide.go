@@ -17,6 +17,7 @@ type OxideClient interface {
 	FloatingIpCreate(context.Context, oxide.FloatingIpCreateParams) (*oxide.FloatingIp, error)
 	FloatingIpView(context.Context, oxide.FloatingIpViewParams) (*oxide.FloatingIp, error)
 	FloatingIpAttach(context.Context, oxide.FloatingIpAttachParams) (*oxide.FloatingIp, error)
+	FloatingIpDetach(context.Context, oxide.FloatingIpDetachParams) (*oxide.FloatingIp, error)
 
 	InstanceCreate(context.Context, oxide.InstanceCreateParams) (*oxide.Instance, error)
 	InstanceView(context.Context, oxide.InstanceViewParams) (*oxide.Instance, error)
