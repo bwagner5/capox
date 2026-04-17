@@ -33,8 +33,13 @@ const (
 	SecretDataTokenKey = "token"
 )
 
-// NewOxideClient constructs an oxide.Client using the secret reference from the provided OxideCluster.
-func NewOxideClient(ctx context.Context, c client.Client, cluster infrastructurev1alpha1.OxideCluster) (OxideClient, error) {
+// NewOxideClient constructs an oxide.Client using the secret reference from the provided
+// OxideCluster.
+func NewOxideClient(
+	ctx context.Context,
+	c client.Client,
+	cluster infrastructurev1alpha1.OxideCluster,
+) (OxideClient, error) {
 	secret := &corev1.Secret{}
 	if err := c.Get(ctx, client.ObjectKey{
 		Namespace: cluster.Spec.CredentialsRef.Namespace,
@@ -42,7 +47,10 @@ func NewOxideClient(ctx context.Context, c client.Client, cluster infrastructure
 	}, secret); err != nil {
 		return nil, fmt.Errorf("loading oxide credentials: %w", err)
 	}
-	oxideClient, err := oxide.NewClient(oxide.WithHost(string(secret.Data[SecretDataHostKey])), oxide.WithToken(string(secret.Data[SecretDataTokenKey])))
+	oxideClient, err := oxide.NewClient(
+		oxide.WithHost(string(secret.Data[SecretDataHostKey])),
+		oxide.WithToken(string(secret.Data[SecretDataTokenKey])),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("constructing oxide client: %w", err)
 	}

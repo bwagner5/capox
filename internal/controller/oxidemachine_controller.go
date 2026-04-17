@@ -59,7 +59,10 @@ type OxideMachineReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
-func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, retErr error) {
+func (r *OxideMachineReconciler) Reconcile(
+	ctx context.Context,
+	req ctrl.Request,
+) (_ ctrl.Result, retErr error) {
 	log := logf.FromContext(ctx)
 
 	oxideMachine := &infrastructurev1alpha1.OxideMachine{}
@@ -107,8 +110,18 @@ func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	projectName := oxideCluster.Spec.Project
-	instanceName := fmt.Sprintf("capi-instance-%s-%s-%s", oxideMachine.Namespace, oxideCluster.Name, oxideMachine.Name)
-	diskName := fmt.Sprintf("capi-boot-disk-%s-%s-%s", oxideMachine.Namespace, oxideCluster.Name, oxideMachine.Name)
+	instanceName := fmt.Sprintf(
+		"capi-instance-%s-%s-%s",
+		oxideMachine.Namespace,
+		oxideCluster.Name,
+		oxideMachine.Name,
+	)
+	diskName := fmt.Sprintf(
+		"capi-boot-disk-%s-%s-%s",
+		oxideMachine.Namespace,
+		oxideCluster.Name,
+		oxideMachine.Name,
+	)
 
 	if !oxideMachine.DeletionTimestamp.IsZero() {
 		return r.handleDelete(ctx, oxideClient, oxideMachine, projectName, instanceName, diskName)
@@ -116,10 +129,16 @@ func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	controllerutil.AddFinalizer(oxideMachine, infrastructurev1alpha1.MachineFinalizer)
 
-	// Ensure instance exists. Instance creation idempotently creates the disk and NIC as well, so create all resources in a single request.
+	// Ensure instance exists. Instance creation idempotently creates the disk and NIC as well, so
+	// create all resources in a single request.
 	var instance *oxide.Instance
 	if oxideMachine.Spec.ProviderID == "" {
-		nicName := fmt.Sprintf("capi-nic-%s-%s-%s", oxideMachine.Namespace, oxideCluster.Name, oxideMachine.Name)
+		nicName := fmt.Sprintf(
+			"capi-nic-%s-%s-%s",
+			oxideMachine.Namespace,
+			oxideCluster.Name,
+			oxideMachine.Name,
+		)
 
 		bootstrapSecretName := machine.Spec.Bootstrap.DataSecretName
 		if bootstrapSecretName == nil {
@@ -133,7 +152,10 @@ func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, fmt.Errorf("fetching bootstrap secret: %w", err)
 		}
 		if _, ok := bootstrapSecret.Data["value"]; !ok {
-			return ctrl.Result{}, fmt.Errorf("missing `value` key in bootstrap secret %s", *bootstrapSecretName)
+			return ctrl.Result{}, fmt.Errorf(
+				"missing `value` key in bootstrap secret %s",
+				*bootstrapSecretName,
+			)
 		}
 
 		instance, err = oxideClient.InstanceCreate(ctx, oxide.InstanceCreateParams{
@@ -174,10 +196,20 @@ func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			},
 		})
 		if err != nil {
-			// Look up the instance if creation failed with a conflict, and adopt the existing instance if found. Note: if an instance was created out of band with unexpected parameters, it will be adopted as well; operators shouldn't create or modify these instances outside the reconciler.
+			// Look up the instance if creation failed with a conflict, and adopt the existing
+			// instance if found. Note: if an instance was created out of band with unexpected
+			// parameters, it will be adopted as well; operators shouldn't create or modify these
+			// instances outside the reconciler.
 			var httpErr *oxide.HTTPError
-			if errors.As(err, &httpErr) && httpErr.ErrorResponse.ErrorCode == "ObjectAlreadyExists" {
-				instance, err = oxideClient.InstanceView(ctx, oxide.InstanceViewParams{Project: oxide.NameOrId(projectName), Instance: oxide.NameOrId(instanceName)})
+			if errors.As(err, &httpErr) &&
+				httpErr.ErrorResponse.ErrorCode == "ObjectAlreadyExists" {
+				instance, err = oxideClient.InstanceView(
+					ctx,
+					oxide.InstanceViewParams{
+						Project:  oxide.NameOrId(projectName),
+						Instance: oxide.NameOrId(instanceName),
+					},
+				)
 				if err != nil {
 					return ctrl.Result{}, fmt.Errorf("viewing existing oxide instance: %w", err)
 				}
@@ -223,7 +255,14 @@ func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{}, nil
 }
 
-func (r *OxideMachineReconciler) handleDelete(ctx context.Context, oxideClient cloud.OxideClient, oxideMachine *infrastructurev1alpha1.OxideMachine, projectName string, instanceName string, diskName string) (ctrl.Result, error) {
+func (r *OxideMachineReconciler) handleDelete(
+	ctx context.Context,
+	oxideClient cloud.OxideClient,
+	oxideMachine *infrastructurev1alpha1.OxideMachine,
+	projectName string,
+	instanceName string,
+	diskName string,
+) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
 	instanceDeleted, err := r.ensureInstanceDeleted(ctx, oxideClient, projectName, instanceName)
@@ -234,14 +273,17 @@ func (r *OxideMachineReconciler) handleDelete(ctx context.Context, oxideClient c
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
-	// Ensure the boot disk is deleted. Because we just ensured that the instance is destroyed, we assume the disk isn't attached. If the disk was attached to another instance out of band, or is otherwise in an unexpected state, the reconciler isn't responsible for detaching it, and returns an error.
+	// Ensure the boot disk is deleted. Because we just ensured that the instance is destroyed, we
+	// assume the disk isn't attached. If the disk was attached to another instance out of band, or
+	// is otherwise in an unexpected state, the reconciler isn't responsible for detaching it, and
+	// returns an error.
 	log.Info("deleting disk", "disk", diskName)
 	if err := oxideClient.DiskDelete(ctx, oxide.DiskDeleteParams{
 		Project: oxide.NameOrId(projectName),
 		Disk:    oxide.NameOrId(diskName),
 	}); err != nil {
 		var httpErr *oxide.HTTPError
-		if !(errors.As(err, &httpErr) && httpErr.ErrorResponse.ErrorCode == "ObjectNotFound") {
+		if !errors.As(err, &httpErr) || httpErr.ErrorResponse.ErrorCode != "ObjectNotFound" {
 			return ctrl.Result{}, fmt.Errorf("deleting disk: %w", err)
 		}
 	}
@@ -250,7 +292,12 @@ func (r *OxideMachineReconciler) handleDelete(ctx context.Context, oxideClient c
 	return ctrl.Result{}, nil
 }
 
-func (r *OxideMachineReconciler) ensureInstanceDeleted(ctx context.Context, oxideClient cloud.OxideClient, projectName string, instanceName string) (bool, error) {
+func (r *OxideMachineReconciler) ensureInstanceDeleted(
+	ctx context.Context,
+	oxideClient cloud.OxideClient,
+	projectName string,
+	instanceName string,
+) (bool, error) {
 	log := logf.FromContext(ctx)
 
 	// View the instance. If it doesn't exist, we're done.
@@ -290,7 +337,13 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(ctx context.Context, oxid
 		}
 		return false, nil
 	default:
-		log.Info("waiting for instance; requeueing", "instance", instance.Id, "state", instance.RunState)
+		log.Info(
+			"waiting for instance; requeueing",
+			"instance",
+			instance.Id,
+			"state",
+			instance.RunState,
+		)
 		return false, nil
 	}
 }

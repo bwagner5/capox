@@ -46,7 +46,8 @@ type OxideMachineStatus struct {
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
 
 	// conditions represent the current state of the OxideMachine resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
+	// Each condition has a unique type and reflects the status of a specific aspect of the
+	// resource.
 	//
 	// Standard condition types include:
 	// - "Available": the resource is fully functional

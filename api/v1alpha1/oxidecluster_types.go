@@ -41,7 +41,8 @@ type OxideClusterStatus struct {
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
 
 	// conditions represent the current state of the OxideCluster resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
+	// Each condition has a unique type and reflects the status of a specific aspect of the
+	// resource.
 	//
 	// Standard condition types include:
 	// - "Available": the resource is fully functional
@@ -55,7 +56,8 @@ type OxideClusterStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// Initialization provides observations of the OxideCluster initialization process.
-	// NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate initial Cluster provisioning.
+	// NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate
+	// initial Cluster provisioning.
 	// +optional
 	Initialization OxideClusterInitializationStatus `json:"initialization,omitempty"`
 }

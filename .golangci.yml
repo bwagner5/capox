@@ -53,6 +53,11 @@ formatters:
   enable:
     - gofmt
     - goimports
+    - golines
+  settings:
+    golines:
+      max-len: 100
+      shorten-comments: true
   exclusions:
     generated: lax
     paths:
