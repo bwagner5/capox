@@ -63,7 +63,7 @@ type OxideClusterReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
-func (r *OxideClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *OxideClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, retErr error) {
 	log := logf.FromContext(ctx)
 
 	var oxideCluster infrastructurev1alpha1.OxideCluster
@@ -78,6 +78,13 @@ func (r *OxideClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("building patch helper: %w", err)
 	}
+	defer func() {
+		if retErr == nil {
+			if err := patchHelper.Patch(ctx, &oxideCluster); err != nil {
+				retErr = fmt.Errorf("patching cluster: %w", err)
+			}
+		}
+	}()
 
 	cluster, err := util.GetOwnerCluster(ctx, r.Client, oxideCluster.ObjectMeta)
 	if err != nil {
@@ -161,10 +168,6 @@ func (r *OxideClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 				break
 			}
 		}
-	}
-
-	if err := patchHelper.Patch(ctx, &oxideCluster); err != nil {
-		return ctrl.Result{}, fmt.Errorf("patching cluster: %w", err)
 	}
 
 	return ctrl.Result{}, nil

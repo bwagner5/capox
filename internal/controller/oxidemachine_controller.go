@@ -58,7 +58,7 @@ type OxideMachineReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
-func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, retErr error) {
 	log := logf.FromContext(ctx)
 
 	var oxideMachine infrastructurev1alpha1.OxideMachine
@@ -73,6 +73,13 @@ func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("building patch helper: %w", err)
 	}
+	defer func() {
+		if retErr == nil {
+			if err := patchHelper.Patch(ctx, &oxideMachine); err != nil {
+				retErr = fmt.Errorf("patching machine: %w", err)
+			}
+		}
+	}()
 
 	machine, err := util.GetOwnerMachine(ctx, r.Client, oxideMachine.ObjectMeta)
 	if err != nil {
@@ -172,15 +179,7 @@ func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			}
 		}
 
-		// Patch the resource and start a new helper after setting the provider ID. If the created instance isn't running, we won't reach the Patch() at the end of the reconciler.
 		oxideMachine.Spec.ProviderID = cloud.NewProviderID(instance.Id)
-		if err := patchHelper.Patch(ctx, &oxideMachine); err != nil {
-			return ctrl.Result{}, fmt.Errorf("patching machine: %w", err)
-		}
-		patchHelper, err = patch.NewHelper(&oxideMachine, r.Client)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("building patch helper: %w", err)
-		}
 	} else {
 		instance, err = oxideClient.InstanceView(ctx, oxide.InstanceViewParams{
 			Project:  oxide.NameOrId(projectName),
@@ -208,10 +207,6 @@ func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	case oxide.InstanceStateRunning:
 		log.Info("instance is running; marking as provisioned")
 		oxideMachine.Status.Initialization.Provisioned = ptr.To(true)
-	}
-
-	if err := patchHelper.Patch(ctx, &oxideMachine); err != nil {
-		return ctrl.Result{}, fmt.Errorf("patching machine: %w", err)
 	}
 
 	return ctrl.Result{}, nil
