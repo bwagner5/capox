@@ -21,6 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const MachineFinalizer = "oxidemachine.infrastructure.cluster.x-k8s.io"
+
 // OxideMachineSpec defines the desired state of OxideMachine.
 type OxideMachineSpec struct {
 	ProviderID string `json:"providerID,omitempty"`

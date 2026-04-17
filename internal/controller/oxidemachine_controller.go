@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrastructurev1alpha1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
@@ -61,21 +62,21 @@ type OxideMachineReconciler struct {
 func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, retErr error) {
 	log := logf.FromContext(ctx)
 
-	var oxideMachine infrastructurev1alpha1.OxideMachine
-	if err := r.Get(ctx, req.NamespacedName, &oxideMachine); err != nil {
+	oxideMachine := &infrastructurev1alpha1.OxideMachine{}
+	if err := r.Get(ctx, req.NamespacedName, oxideMachine); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
 
-	patchHelper, err := patch.NewHelper(&oxideMachine, r.Client)
+	patchHelper, err := patch.NewHelper(oxideMachine, r.Client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("building patch helper: %w", err)
 	}
 	defer func() {
 		if retErr == nil {
-			if err := patchHelper.Patch(ctx, &oxideMachine); err != nil {
+			if err := patchHelper.Patch(ctx, oxideMachine); err != nil {
 				retErr = fmt.Errorf("patching machine: %w", err)
 			}
 		}
@@ -107,11 +108,17 @@ func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	projectName := oxideCluster.Spec.Project
 	instanceName := fmt.Sprintf("capi-instance-%s-%s-%s", oxideMachine.Namespace, oxideCluster.Name, oxideMachine.Name)
+	diskName := fmt.Sprintf("capi-boot-disk-%s-%s-%s", oxideMachine.Namespace, oxideCluster.Name, oxideMachine.Name)
+
+	if !oxideMachine.DeletionTimestamp.IsZero() {
+		return r.handleDelete(ctx, oxideClient, oxideMachine, projectName, instanceName, diskName)
+	}
+
+	controllerutil.AddFinalizer(oxideMachine, infrastructurev1alpha1.MachineFinalizer)
 
 	// Ensure instance exists. Instance creation idempotently creates the disk and NIC as well, so create all resources in a single request.
 	var instance *oxide.Instance
 	if oxideMachine.Spec.ProviderID == "" {
-		diskName := fmt.Sprintf("capi-boot-disk-%s-%s-%s", oxideMachine.Namespace, oxideCluster.Name, oxideMachine.Name)
 		nicName := fmt.Sprintf("capi-nic-%s-%s-%s", oxideMachine.Namespace, oxideCluster.Name, oxideMachine.Name)
 
 		bootstrapSecretName := machine.Spec.Bootstrap.DataSecretName
@@ -123,10 +130,10 @@ func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			Namespace: machine.Namespace,
 			Name:      *bootstrapSecretName,
 		}, &bootstrapSecret); err != nil {
-			return ctrl.Result{}, fmt.Errorf("fetching bootstrap secret: %w")
+			return ctrl.Result{}, fmt.Errorf("fetching bootstrap secret: %w", err)
 		}
 		if _, ok := bootstrapSecret.Data["value"]; !ok {
-			return ctrl.Result{}, fmt.Errorf("missing `value` key in bootstrap secret %s", bootstrapSecretName)
+			return ctrl.Result{}, fmt.Errorf("missing `value` key in bootstrap secret %s", *bootstrapSecretName)
 		}
 
 		instance, err = oxideClient.InstanceCreate(ctx, oxide.InstanceCreateParams{
@@ -190,9 +197,13 @@ func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	// Ensure instance is running.
+	// Ensure instance is running:
+	// * If stopped, start and requeue.
+	// * If running, finished.
+	// * Else log and requeue.
 	switch instance.RunState {
 	case oxide.InstanceStateStopped:
+		log.Info("starting instance", "instance", instance.Id)
 		if _, err := oxideClient.InstanceStart(ctx, oxide.InstanceStartParams{
 			Project:  oxide.NameOrId(oxideCluster.Spec.Project),
 			Instance: oxide.NameOrId(instance.Id),
@@ -201,15 +212,87 @@ func (r *OxideMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 		log.Info("waiting for instance to start", "state", instance.RunState)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-	case oxide.InstanceStateCreating, oxide.InstanceStateStarting:
-		log.Info("waiting for instance to start", "state", instance.RunState)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	case oxide.InstanceStateRunning:
-		log.Info("instance is running; marking as provisioned")
+		log.Info("instance is running; marking as provisioned", "instance", instanceName)
 		oxideMachine.Status.Initialization.Provisioned = ptr.To(true)
+	default:
+		log.Info("waiting for instance", "instance", instance.Id, "state", instance.RunState)
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *OxideMachineReconciler) handleDelete(ctx context.Context, oxideClient cloud.OxideClient, oxideMachine *infrastructurev1alpha1.OxideMachine, projectName string, instanceName string, diskName string) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	instanceDeleted, err := r.ensureInstanceDeleted(ctx, oxideClient, projectName, instanceName)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensuring instance deleted: %w", err)
+	}
+	if !instanceDeleted {
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
+	// Ensure the boot disk is deleted. Because we just ensured that the instance is destroyed, we assume the disk isn't attached. If the disk was attached to another instance out of band, or is otherwise in an unexpected state, the reconciler isn't responsible for detaching it, and returns an error.
+	log.Info("deleting disk", "disk", diskName)
+	if err := oxideClient.DiskDelete(ctx, oxide.DiskDeleteParams{
+		Project: oxide.NameOrId(projectName),
+		Disk:    oxide.NameOrId(diskName),
+	}); err != nil {
+		var httpErr *oxide.HTTPError
+		if !(errors.As(err, &httpErr) && httpErr.ErrorResponse.ErrorCode == "ObjectNotFound") {
+			return ctrl.Result{}, fmt.Errorf("deleting disk: %w", err)
+		}
+	}
+
+	controllerutil.RemoveFinalizer(oxideMachine, infrastructurev1alpha1.MachineFinalizer)
+	return ctrl.Result{}, nil
+}
+
+func (r *OxideMachineReconciler) ensureInstanceDeleted(ctx context.Context, oxideClient cloud.OxideClient, projectName string, instanceName string) (bool, error) {
+	log := logf.FromContext(ctx)
+
+	// View the instance. If it doesn't exist, we're done.
+	instance, err := oxideClient.InstanceView(ctx, oxide.InstanceViewParams{
+		Project:  oxide.NameOrId(projectName),
+		Instance: oxide.NameOrId(instanceName),
+	})
+	if err != nil {
+		var httpErr *oxide.HTTPError
+		if errors.As(err, &httpErr) && httpErr.ErrorResponse.ErrorCode == "ObjectNotFound" {
+			return true, nil
+		}
+		return false, fmt.Errorf("viewing instance: %w", err)
+	}
+
+	// Instance deletion state machine:
+	// * If running, stop and requeue.
+	// * If stopped, destroy and requeue.
+	// * Else log and requeue.
+	switch instance.RunState {
+	case oxide.InstanceStateRunning:
+		log.Info("stopping instance", "instance", instance.Id)
+		if _, err := oxideClient.InstanceStop(ctx, oxide.InstanceStopParams{
+			Project:  oxide.NameOrId(projectName),
+			Instance: oxide.NameOrId(instanceName),
+		}); err != nil {
+			return false, fmt.Errorf("stopping instance: %w", err)
+		}
+		return false, nil
+	case oxide.InstanceStateStopped:
+		log.Info("destroying instance", "instance", instance.Id)
+		if err := oxideClient.InstanceDelete(ctx, oxide.InstanceDeleteParams{
+			Project:  oxide.NameOrId(projectName),
+			Instance: oxide.NameOrId(instanceName),
+		}); err != nil {
+			return false, fmt.Errorf("deleting instance: %w", err)
+		}
+		return false, nil
+	default:
+		log.Info("waiting for instance; requeueing", "instance", instance.Id, "state", instance.RunState)
+		return false, nil
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.

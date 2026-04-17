@@ -22,7 +22,10 @@ type OxideClient interface {
 	InstanceCreate(context.Context, oxide.InstanceCreateParams) (*oxide.Instance, error)
 	InstanceView(context.Context, oxide.InstanceViewParams) (*oxide.Instance, error)
 	InstanceStart(context.Context, oxide.InstanceStartParams) (*oxide.Instance, error)
+	InstanceStop(context.Context, oxide.InstanceStopParams) (*oxide.Instance, error)
 	InstanceDelete(context.Context, oxide.InstanceDeleteParams) error
+
+	DiskDelete(context.Context, oxide.DiskDeleteParams) error
 }
 
 const (
