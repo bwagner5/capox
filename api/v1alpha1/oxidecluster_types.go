@@ -22,6 +22,8 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
 
+const ClusterFinalizer = "oxidecluster.infrastructure.cluster.x-k8s.io"
+
 // OxideClusterSpec defines the desired state of OxideCluster
 type OxideClusterSpec struct {
 	CredentialsRef       corev1.SecretReference `json:"credentialsRef"`

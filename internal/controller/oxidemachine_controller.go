@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	infrastructurev1alpha1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
+	infrav1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
 	"github.com/oxidecomputer/cluster-api-provider-oxide/internal/cloud"
 	"github.com/oxidecomputer/oxide.go/oxide"
 )
@@ -65,7 +65,7 @@ func (r *OxideMachineReconciler) Reconcile(
 ) (_ ctrl.Result, retErr error) {
 	log := logf.FromContext(ctx)
 
-	oxideMachine := &infrastructurev1alpha1.OxideMachine{}
+	oxideMachine := &infrav1.OxideMachine{}
 	if err := r.Get(ctx, req.NamespacedName, oxideMachine); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -96,11 +96,11 @@ func (r *OxideMachineReconciler) Reconcile(
 
 	clusterName := machine.Labels[clusterv1.ClusterNameLabel]
 
-	var oxideCluster infrastructurev1alpha1.OxideCluster
+	oxideCluster := &infrav1.OxideCluster{}
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: machine.Namespace,
 		Name:      clusterName,
-	}, &oxideCluster); err != nil {
+	}, oxideCluster); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -127,7 +127,7 @@ func (r *OxideMachineReconciler) Reconcile(
 		return r.handleDelete(ctx, oxideClient, oxideMachine, projectName, instanceName, diskName)
 	}
 
-	controllerutil.AddFinalizer(oxideMachine, infrastructurev1alpha1.MachineFinalizer)
+	controllerutil.AddFinalizer(oxideMachine, infrav1.MachineFinalizer)
 
 	// Ensure instance exists. Instance creation idempotently creates the disk and NIC as well, so
 	// create all resources in a single request.
@@ -255,10 +255,12 @@ func (r *OxideMachineReconciler) Reconcile(
 	return ctrl.Result{}, nil
 }
 
+// handleDelete idempotently deletes the Oxide instance and its boot disk, and removes the finalizer
+// if successful.
 func (r *OxideMachineReconciler) handleDelete(
 	ctx context.Context,
 	oxideClient cloud.OxideClient,
-	oxideMachine *infrastructurev1alpha1.OxideMachine,
+	oxideMachine *infrav1.OxideMachine,
 	projectName string,
 	instanceName string,
 	diskName string,
@@ -288,7 +290,7 @@ func (r *OxideMachineReconciler) handleDelete(
 		}
 	}
 
-	controllerutil.RemoveFinalizer(oxideMachine, infrastructurev1alpha1.MachineFinalizer)
+	controllerutil.RemoveFinalizer(oxideMachine, infrav1.MachineFinalizer)
 	return ctrl.Result{}, nil
 }
 
@@ -351,7 +353,7 @@ func (r *OxideMachineReconciler) ensureInstanceDeleted(
 // SetupWithManager sets up the controller with the Manager.
 func (r *OxideMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&infrastructurev1alpha1.OxideMachine{}).
+		For(&infrav1.OxideMachine{}).
 		Named("oxidemachine").
 		Complete(r)
 }

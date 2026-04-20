@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -69,21 +70,21 @@ func (r *OxideClusterReconciler) Reconcile(
 ) (_ ctrl.Result, retErr error) {
 	log := logf.FromContext(ctx)
 
-	var oxideCluster infrav1.OxideCluster
-	if err := r.Get(ctx, req.NamespacedName, &oxideCluster); err != nil {
+	oxideCluster := &infrav1.OxideCluster{}
+	if err := r.Get(ctx, req.NamespacedName, oxideCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
 
-	patchHelper, err := patch.NewHelper(&oxideCluster, r.Client)
+	patchHelper, err := patch.NewHelper(oxideCluster, r.Client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("building patch helper: %w", err)
 	}
 	defer func() {
 		if retErr == nil {
-			if err := patchHelper.Patch(ctx, &oxideCluster); err != nil {
+			if err := patchHelper.Patch(ctx, oxideCluster); err != nil {
 				retErr = fmt.Errorf("patching cluster: %w", err)
 			}
 		}
@@ -106,15 +107,23 @@ func (r *OxideClusterReconciler) Reconcile(
 	// plane endpoint host.
 	//
 	// TODO: Use a load balancer instead, once Oxide has native load balancing support.
-	var ip *oxide.FloatingIp
+	projectName := oxideCluster.Spec.Project
 	ipName := fmt.Sprintf(
 		"k8s-cluster-api-endpoint-%s-%s",
 		oxideCluster.Namespace,
 		oxideCluster.Name,
 	)
+
+	if !oxideCluster.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, r.handleDelete(ctx, oxideClient, oxideCluster, projectName, ipName)
+	}
+
+	controllerutil.AddFinalizer(oxideCluster, infrav1.ClusterFinalizer)
+
+	var ip *oxide.FloatingIp
 	if oxideCluster.Spec.ControlPlaneEndpoint.Host == "" {
 		ip, err = oxideClient.FloatingIpCreate(ctx, oxide.FloatingIpCreateParams{
-			Project: oxide.NameOrId(oxideCluster.Spec.Project),
+			Project: oxide.NameOrId(projectName),
 			Body: &oxide.FloatingIpCreate{
 				Name: oxide.Name(ipName),
 				AddressAllocator: oxide.AddressAllocator{
@@ -137,7 +146,7 @@ func (r *OxideClusterReconciler) Reconcile(
 			}
 			log.Info("floating ip already exists", "name", ipName)
 			ip, err = oxideClient.FloatingIpView(ctx, oxide.FloatingIpViewParams{
-				Project:    oxide.NameOrId(oxideCluster.Spec.Project),
+				Project:    oxide.NameOrId(projectName),
 				FloatingIp: oxide.NameOrId(ipName),
 			})
 			if err != nil {
@@ -148,7 +157,7 @@ func (r *OxideClusterReconciler) Reconcile(
 		oxideCluster.Spec.ControlPlaneEndpoint.Port = 6443
 	} else {
 		ip, err = oxideClient.FloatingIpView(ctx, oxide.FloatingIpViewParams{
-			Project:    oxide.NameOrId(oxideCluster.Spec.Project),
+			Project:    oxide.NameOrId(projectName),
 			FloatingIp: oxide.NameOrId(ipName),
 		})
 		if err != nil {
@@ -157,11 +166,13 @@ func (r *OxideClusterReconciler) Reconcile(
 	}
 	oxideCluster.Status.Initialization.Provisioned = ptr.To(true)
 
-	// Ensure floating IP is attached to an instance. Use the 0th ready machine if unattached.
+	// Ensure floating IP is attached to an instance. Use the 0th ready control plane machine if
+	// unattached.
 	shouldAttach := true
 	var machines infrav1.OxideMachineList
 
-	// If the floating IP is attached, check whether it's attached to one of the machines in the
+	// If the floating IP is attached, check whether it's attached to one of the control plane
+	// machines in the
 	// current cluster.
 	if err := r.List(
 		ctx,
@@ -240,6 +251,30 @@ func (r *OxideClusterReconciler) Reconcile(
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// handleDelete deletes the floating IP if it exists, ignoring 404s, and removes the finalizer if
+// successful.
+func (r *OxideClusterReconciler) handleDelete(
+	ctx context.Context,
+	oxideClient cloud.OxideClient,
+	oxideCluster *infrav1.OxideCluster,
+	projectName string,
+	ipName string,
+) error {
+	if err := oxideClient.FloatingIpDelete(ctx, oxide.FloatingIpDeleteParams{
+		Project:    oxide.NameOrId(projectName),
+		FloatingIp: oxide.NameOrId(ipName),
+	}); err != nil {
+		var httpError *oxide.HTTPError
+		if !errors.As(err, &httpError) ||
+			httpError.ErrorResponse.ErrorCode != "ObjectNotFound" {
+			return fmt.Errorf("deleting floating ip: %w", err)
+		}
+	}
+
+	controllerutil.RemoveFinalizer(oxideCluster, infrav1.ClusterFinalizer)
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

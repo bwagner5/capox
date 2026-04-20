@@ -8,7 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	infrastructurev1alpha1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
+	infrav1 "github.com/oxidecomputer/cluster-api-provider-oxide/api/v1alpha1"
 
 	"github.com/oxidecomputer/oxide.go/oxide"
 )
@@ -18,6 +18,7 @@ type OxideClient interface {
 	FloatingIpView(context.Context, oxide.FloatingIpViewParams) (*oxide.FloatingIp, error)
 	FloatingIpAttach(context.Context, oxide.FloatingIpAttachParams) (*oxide.FloatingIp, error)
 	FloatingIpDetach(context.Context, oxide.FloatingIpDetachParams) (*oxide.FloatingIp, error)
+	FloatingIpDelete(context.Context, oxide.FloatingIpDeleteParams) error
 
 	InstanceCreate(context.Context, oxide.InstanceCreateParams) (*oxide.Instance, error)
 	InstanceView(context.Context, oxide.InstanceViewParams) (*oxide.Instance, error)
@@ -38,7 +39,7 @@ const (
 func NewOxideClient(
 	ctx context.Context,
 	c client.Client,
-	cluster infrastructurev1alpha1.OxideCluster,
+	cluster *infrav1.OxideCluster,
 ) (OxideClient, error) {
 	secret := &corev1.Secret{}
 	if err := c.Get(ctx, client.ObjectKey{
