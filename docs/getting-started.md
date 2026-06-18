@@ -11,12 +11,13 @@ Choose an Oxide project in which to build the image, as well as a base image. On
 
 You'll also need to export environment variables for Packer to authenticate to the Oxide API:
 
-    $ export OXIDE_PROFILE=<my-profile>
+    $ export OXIDE_HOST=<my-oxide-host>
+    $ export OXIDE_TOKEN=<my-oxide-token>
 
 or
 
-    $ export OXIDE_HOST=<my-oxide-host>
-    $ export OXIDE_TOKEN=<my-oxide-token>
+    $ export OXIDE_PROFILE=<my-profile>
+
 
 Clone the image builder:
 
@@ -36,6 +37,14 @@ CAPI uses a management cluster to configure and deploy workload clusters. Any Ku
 
     $ export MANAGEMENT_CLUSTER=capi-management
     $ kind create cluster --name $MANAGEMENT_CLUSTER
+    $ kubectl config use-context kind-$MANAGEMENT_CLUSTER
+
+Add the Oxide credentials to the management cluster to allow the Oxide CAPI provider to call the Oxide API. 
+Ensure that the `$OXIDE_HOST` and `$OXIDE_TOKEN` environment variables are set and run:
+
+    $ kubectl create secret generic oxide-credentials \
+        --from-literal=oxide-host=${OXIDE_HOST} \
+        --from-literal=oxide-token=${OXIDE_TOKEN}
 
 If developing the Oxide CAPI provider locally, build and upload the controller Docker image:
 
@@ -43,7 +52,7 @@ If developing the Oxide CAPI provider locally, build and upload the controller D
     $ make docker-build
     $ kind load docker-image $IMG --name $MANAGEMENT_CLUSTER
 
-Install the core CAPI Kubernetes resources and controllers to the management cluster:
+Next, install the `clusterctl` tool by following the [installation docs](https://cluster-api.sigs.k8s.io/user/quick-start.html#install-clusterctl). Use the `clusterctl` CLI to install the core CAPI Kubernetes resources and controllers to the management cluster. 
 
     $ clusterctl init
 
@@ -53,11 +62,15 @@ Install the Oxide CAPI provider resources and controllers to the management clus
 
 ## Create a workload cluster
 
+
+Add a firewall rule to the VPC to allow inbound TCP/6443 traffic to the floating IP. 
+
+
 Export the ID of the image built using `image-builder` above:
 
     $ export OXIDE_IMAGE_ID=<my-image-id>
 
-A CAPI workload cluster comprises several different resource types. We'll generate a manifest describing all the necessary resources using `clusterctl`. First, install `clusterctl`, following the instructions in [the docs](https://cluster-api.sigs.k8s.io/user/quick-start.html#install-clusterctl). Then render the provided template:
+A CAPI workload cluster comprises several different resource types. We'll generate a manifest describing all the necessary resources using `clusterctl` to render the provided template:
 
     $ clusterctl generate cluster \
         quickstart \
@@ -75,19 +88,19 @@ In order to configure the workload cluster, we'll need to fetch its kubeconfig:
 
     $ kubectl get secret quickstart-kubeconfig -o jsonpath='{.data.value}' | base64 -d > /tmp/quickstart
 
-In order for Kubernetes nodes in the workload cluster to become healthy, we need to run a CNI plugin (so that nodes can pass their readiness check) and the [Oxide Cloud Controller Manager](https://github.com/oxidecomputer/oxide-cloud-controller-manager) (CCM; to set the node's `providerID`). First, we'll install the Calico CNI:
+In order for Kubernetes nodes in the workload cluster to become healthy, we need to run a CNI plugin (so that nodes can pass their readiness check).  We'll install the Calico CNI:
 
     $ KUBECONFIG=/tmp/quickstart kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/calico.yaml
 
-Next, install the CCM:
+Next we need the [Oxide Cloud Controller Manager](https://github.com/oxidecomputer/oxide-cloud-controller-manager) (CCM; to set the node's `providerID`).
+
+The CCM requires a Kubernetes secret with credentials to authenticate to the Oxide API, so we'll create that secret first:
+
+    $ KUBECONFIG=/tmp/quickstart kubectl create secret -n kube-system generic quickstart-oxide-cloud-controller-manager \
+        --from-literal=oxide-host=<oxide-host> \
+        --from-literal=oxide-token=<oxide-token> \
+        --from-literal=oxide-project=<oxide-project>
 
     $ KUBECONFIG=/tmp/quickstart helm install quickstart \
         oci://ghcr.io/oxidecomputer/helm-charts/oxide-cloud-controller-manager \
         --namespace kube-system
-
-The CCM also requires a Kubernetes secret with credentials to authenticate to the Oxide API, so we'll create that secret as well:
-
-    $ KUBECONFIG=/tmp/quickstart kubectl create secret generic quickstart-oxide-cloud-controller-manager \
-        --from-literal=oxide-host=<oxide-host> \
-        --from-literal=oxide-token=<oxide-token> \
-        --from-literal=oxide-project=<oxide-project>
