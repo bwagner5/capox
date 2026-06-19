@@ -88,9 +88,9 @@ In order to configure the workload cluster, we'll need to fetch its kubeconfig:
 
     $ kubectl get secret quickstart-kubeconfig -o jsonpath='{.data.value}' | base64 -d > /tmp/quickstart
 
-In order for Kubernetes nodes in the workload cluster to become healthy, we need to run a CNI plugin (so that nodes can pass their readiness check).  We'll install the Calico CNI:
+In order for Kubernetes nodes in the workload cluster to become healthy, we need to run a CNI plugin (so that nodes can pass their readiness check).  We'll install the Cilium CNI with the `cilium` CLI. Installation instructions are [here](https://docs.cilium.io/en/stable/gettingstarted/k8s-install-default/#install-the-cilium-cli).
 
-    $ KUBECONFIG=/tmp/quickstart kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/calico.yaml
+    $ KUBECONFIG=/tmp/quickstart cilium install
 
 Next we need the [Oxide Cloud Controller Manager](https://github.com/oxidecomputer/oxide-cloud-controller-manager) (CCM; to set the node's `providerID`).
 
