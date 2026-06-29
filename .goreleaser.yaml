@@ -68,3 +68,5 @@ publishers:
     extra_files:
       - glob: ./out/helm/*.tgz
     cmd: helm push "{{ abs .ArtifactPath }}" "oci://{{ .Env.HELM_OCI_REPO }}"
+    env:
+      - HELM_OCI_REPO={{ .Env.HELM_OCI_REPO }}
