@@ -1,6 +1,7 @@
 # Image URL to use all building/pushing image targets
 IMAGE_REPO ?= ghcr.io/oxidecomputer/cluster-api-provider-oxide
 HELM_OCI_REPO ?= $(IMAGE_REPO)/helm-charts
+export HELM_OCI_REPO
 IMAGE_TAG ?= dev
 IMG ?= $(IMAGE_REPO):$(IMAGE_TAG)
 KO_DOCKER_REPO ?= $(IMAGE_REPO)
