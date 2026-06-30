@@ -1,6 +1,5 @@
 # Image URL to use all building/pushing image targets
 IMAGE_REPO ?= ghcr.io/oxidecomputer/cluster-api-provider-oxide
-HELM_OCI_REPO ?= $(IMAGE_REPO)/helm-charts
 IMAGE_TAG ?= dev
 IMG ?= $(IMAGE_REPO):$(IMAGE_TAG)
 KO_DOCKER_REPO ?= $(IMAGE_REPO)
@@ -14,6 +13,10 @@ GOBIN=$(shell go env GOPATH)/bin
 else
 GOBIN=$(shell go env GOBIN)
 endif
+
+show:
+	@echo "IMAGE_REF $(IMAGE_REF)"
+	@echo "HELM_OCI_REPO $(HELM_OCI_REPO)"
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
@@ -203,7 +206,7 @@ KUBECTL ?= kubectl
 KIND ?= $(GO_TOOL) kind
 KO ?= $(GO_TOOL) ko
 KUSTOMIZE ?= $(GO_TOOL) kustomize
-GORELEASER ?= HELM_OCI_REPO=$(HELM_OCI_REPO) $(GO_TOOL) goreleaser
+GORELEASER ?= HELM_OCI_REPO=$(IMAGE_REF)/helm-charts $(GO_TOOL) goreleaser
 ENVTEST ?= go tool setup-envtest # this tool is in the main go.mod so the version stays in-sync
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint-custom
 
