@@ -8,6 +8,7 @@ The [Cluster API](https://github.com/kubernetes-sigs/cluster-api) Provider Oxide
 
 The provider implements Oxide specific K8s resources:
  - OxideMachine 
+ - OxideMachineTemplate
  - OxideCluster
 
 ## Getting Started
@@ -30,4 +31,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-

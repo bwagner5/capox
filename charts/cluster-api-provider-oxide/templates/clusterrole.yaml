@@ -1,0 +1,31 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cluster-api-provider-oxide.name" . }}
+  labels:
+    {{- include "cluster-api-provider-oxide.labels" . | nindent 4 }}
+# Rules below are generated from the +kubebuilder:rbac markers in
+# internal/controller via `make manifests` (controller-gen), written to
+# generated/clusterrole.yaml, and read in here -- so they are never hand-edited. They
+# are cluster-wide on purpose: the controller reads Oxide credential Secrets
+# (OxideCluster.spec.credentialsRef) and bootstrap data Secrets, which can live
+# in any namespace where a workload cluster is defined. The cached client backs
+# these reads with a list/watch, so namespace- or name-scoped RBAC can't narrow
+# it. This matches CAPA/CAPZ/CAPV.
+rules:
+  {{- (.Files.Get "generated/clusterrole.yaml" | fromYaml).rules | toYaml | nindent 2 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cluster-api-provider-oxide.name" . }}
+  labels:
+    {{- include "cluster-api-provider-oxide.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cluster-api-provider-oxide.name" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "cluster-api-provider-oxide.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}

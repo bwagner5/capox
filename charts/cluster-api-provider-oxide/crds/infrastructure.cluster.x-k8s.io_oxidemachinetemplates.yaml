@@ -1,0 +1,179 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta1: v1alpha1
+    cluster.x-k8s.io/v1beta2: v1alpha1
+  name: oxidemachinetemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    kind: OxideMachineTemplate
+    listKind: OxideMachineTemplateList
+    plural: oxidemachinetemplates
+    singular: oxidemachinetemplate
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: OxideMachineTemplate is the Schema for the oxidemachinetemplates
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of OxideMachineTemplate
+            properties:
+              template:
+                description: OxideMachineTemplateResource describes the data needed
+                  to create an OxideMachine from a template.
+                properties:
+                  metadata:
+                    description: |-
+                      ObjectMeta is the labels and annotations to apply to the OxideMachines created from this
+                      template.
+                    minProperties: 1
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          annotations is an unstructured key value map stored with a resource that may be
+                          set by external tools to store and retrieve arbitrary metadata. They are not
+                          queryable and should be preserved when modifying objects.
+                          More info: http://kubernetes.io/docs/user-guide/annotations
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          labels is a map of string keys and values that can be used to organize and categorize
+                          (scope and select) objects. May match selectors of replication controllers
+                          and services.
+                          More info: http://kubernetes.io/docs/user-guide/labels
+                        type: object
+                    type: object
+                  spec:
+                    description: Spec is the specification of the desired behavior
+                      of the machine.
+                    properties:
+                      antiAffinityGroups:
+                        description: |-
+                          AntiAffinityGroups is the list of anti-affinity group names or IDs that the Oxide instance
+                          should use. Anti-affinity groups should be created outside the operator, else instance
+                          creation will fail.
+                          https://docs.oxide.computer/guides/deploying-workloads#_affinity_and_anti_affinity
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: set
+                      dataDisks:
+                        description: DataDisks is the list of data disks to attach
+                          to the Oxide instance.
+                        items:
+                          description: DataDisk is a data disk attached to the Oxide
+                            instance.
+                          properties:
+                            blockSize:
+                              default: 4096
+                              description: BlockSize is the block size of the disk.
+                              enum:
+                              - 512
+                              - 2048
+                              - 4096
+                              format: int64
+                              type: integer
+                            size:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              description: Size is the size of the disk.
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                          required:
+                          - size
+                          type: object
+                        type: array
+                      diskSize:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: DiskSize is the size of the boot disk to allocate
+                          for the instance, in bytes.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      imageID:
+                        description: ImageID is the ID of the boot disk image.
+                        type: string
+                      ipPool:
+                        description: |-
+                          IPPool is the Oxide IP pool to use for the instance's external IP. If not set, omit the
+                          external IP for the machine. If set, the IP pool must exist.
+                        type: string
+                      memory:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: Memory is the amount of memory to allocate for
+                          the instance, in bytes.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      nCPUs:
+                        description: NCpus is the number of vCPUs to allocate for
+                          the instance.
+                        format: int64
+                        type: integer
+                      providerID:
+                        description: |-
+                          ProviderID is a unique identifier for the Oxide instance for use in correlating across
+                          kubernetes resources. Must match provider IDs generated by the Oxide cloud controller
+                          manager.
+                          https://cluster-api.sigs.k8s.io/reference/glossary#providerid
+                        type: string
+                      sshPublicKeys:
+                        description: |-
+                          SSHPublicKeys is the list of SSH key names or IDs to attach to the Oxide instance. SSH keys
+                          should be created outside the operator, else instance creation will fail.
+                          https://docs.oxide.computer/guides/user-settings#manage-ssh-keys
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: set
+                    required:
+                    - diskSize
+                    - imageID
+                    - memory
+                    - nCPUs
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
