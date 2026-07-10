@@ -6,8 +6,13 @@
 # Docs: https://goreleaser.com/customization/ko/
 version: 2
 
+env:
+  - IMAGE_TAG={{ .Version }}
 before:
   hooks:
+    # Clean out stale chart tarballs so the `make release` helm push step only
+    # sees the charts packaged for this version.
+    - rm -rf ./_artifacts/helm
     - mkdir -p ./_artifacts/helm
     - >-
       helm package ./charts/cluster-api-provider-oxide
@@ -19,11 +24,7 @@ before:
       --version {{ .Version }}
       --app-version {{ .Version }}
       --destination ./_artifacts/helm
-    # Render the clusterctl provider components manifest (into ./out) against
-    # the image published by the ko pipe below. IfNotPresent because release
-    # tags are immutable.
-    - >-
-      IMAGE_TAG={{ .Version }} make manifests
+    - make manifests
 
 # ko re-builds the binary itself using these settings (results are cached from
 # the build pipe). CGO is disabled so the image can run on the distroless base.
@@ -77,12 +78,7 @@ release:
     - glob: ./_artifacts/infrastructure-components.yaml
     - glob: ./metadata.yaml
 
-publishers:
-  - name: helm-oci
-    ids:
-      - helm-only
-    extra_files:
-      - glob: ./_artifacts/helm/*.tgz
-    cmd: helm push "{{ abs .ArtifactPath }}" "oci://{{ .Env.HELM_OCI_REPO }}"
-    env:
-      - HELM_OCI_REPO={{ .Env.HELM_OCI_REPO }}
+# NOTE: helm charts are pushed to the OCI registry by the `release` Makefile
+# target after goreleaser finishes. A custom publisher can't do it: goreleaser
+# runs publishers against every extra file attached to the release, so 
+# `helm push` would also be invoked on metadata.yaml and infrastructure-components.yaml.
