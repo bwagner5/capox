@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write # create the GitHub release
   packages: write # push images to ghcr.io
+  pull-requests: write # open the metadata.yaml release-series sync PR (hack/ensure-capi-metadata.sh)
 
 jobs:
   release:

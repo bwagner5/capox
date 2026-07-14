@@ -67,16 +67,20 @@ checksum:
   extra_files:
     - glob: ./_artifacts/helm/*.tgz
     - glob: ./_artifacts/infrastructure-components.yaml
-    - glob: ./metadata.yaml
+    - glob: ./_artifacts/metadata.yaml
 
 # Attach the clusterctl provider artifacts to the GitHub release so
 # `clusterctl init --infrastructure oxide` can discover and install the
 # provider. metadata.yaml maps release versions to CAPI contract versions and
-# must accompany the components manifest.
+# must accompany the components manifest. The staged copy in _artifacts is
+# used (not the tracked file) because hack/ensure-capi-metadata.sh may need to
+# append the release series entry for the tag being cut, and the working tree
+# must stay clean for goreleaser to run; the Makefile release targets stage it
+# before invoking goreleaser.
 release:
   extra_files:
     - glob: ./_artifacts/infrastructure-components.yaml
-    - glob: ./metadata.yaml
+    - glob: ./_artifacts/metadata.yaml
 
 # NOTE: helm charts are pushed to the OCI registry by the `release` Makefile
 # target after goreleaser finishes. A custom publisher can't do it: goreleaser
